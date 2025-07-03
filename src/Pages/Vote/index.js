@@ -1,3 +1,4 @@
+// src/Pages/Vote/index.js
 import React from "react";
 import {
   Button,
@@ -37,6 +38,36 @@ class Vote extends React.Component {
     };
   }
 
+  // Fixed helper function with working IPFS gateway
+  processImageUrl = (sourceUrl) => {
+    if (!sourceUrl) return null;
+    
+    // If it's already a complete URL, check if it's the broken domain
+    if (sourceUrl.startsWith('https://vrdao.mypinata.cloud/ipfs/')) {
+      // Extract the hash and use working gateway
+      const hash = sourceUrl.split('/ipfs/')[1];
+      return `https://gateway.pinata.cloud/ipfs/${hash}`;
+    }
+    
+    // If it's already a complete URL with working domain, return as is
+    if (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://')) {
+      return sourceUrl;
+    }
+    
+    // If it's an IPFS hash, convert to proper URL
+    if (sourceUrl.startsWith('Qm') || sourceUrl.startsWith('bafy')) {
+      return `https://gateway.pinata.cloud/ipfs/${sourceUrl}`;
+    }
+    
+    // If it contains ipfs in the path, fix it
+    if (sourceUrl.includes('/ipfs/')) {
+      const hash = sourceUrl.split('/ipfs/')[1];
+      return `https://gateway.pinata.cloud/ipfs/${hash}`;
+    }
+    
+    return sourceUrl;
+  };
+
   async componentWillReceiveProps(nextProps) {
     await this.init(nextProps);
   }
@@ -55,6 +86,8 @@ class Vote extends React.Component {
           .call();
 
         if (vote === false) {
+          // Process the image URL
+          election.processedImageUrl = this.processImageUrl(election.source);
           elections.push(election);
         }
       }
@@ -66,7 +99,7 @@ class Vote extends React.Component {
     }
   }
 
-  async componentWillMount() {
+  async componentDidMount() {
     await this.init(this.props);
   }
 
@@ -89,7 +122,6 @@ class Vote extends React.Component {
     });
 
     const linkedContract = new window.web3.eth.Contract(daoABI, daoAddress);
-    console.log(linkedContract);
     await linkedContract.methods
       .vote(proposalID, trueOrFalse)
       .send({ from: this.props.account })
@@ -171,7 +203,6 @@ class Vote extends React.Component {
                         <TableCell align="left">{key + 1}</TableCell>
                         <TableCell align="center">
                           <Stack
-                            // flexDirection="row"
                             alignItems="center"
                             justifyContent="center"
                             sx={{
@@ -179,17 +210,31 @@ class Vote extends React.Component {
                               height: 60,
                               borderRadius: 2,
                               border: `1px solid ${this.props.theme.palette.divider}`,
+                              overflow: 'hidden',
                             }}
                           >
-                            <Box
-                              src={
-                                element.source
-                                  ? element.source
-                                  : "/images/election.png"
-                              }
-                              component="img"
-                              sx={{ width: 40 }}
-                            />
+                            {element.processedImageUrl ? (
+                              <Box
+                                component="img"
+                                src={element.processedImageUrl}
+                                onError={(e) => {
+                                  // Fallback to default image if the processed URL fails
+                                  e.target.src = "/images/election.png";
+                                }}
+                                sx={{ 
+                                  width: "100%", 
+                                  height: "100%",
+                                  objectFit: "cover" 
+                                }}
+                                alt={element.name || "Election image"}
+                              />
+                            ) : (
+                              <Box
+                                src="/images/election.png"
+                                component="img"
+                                sx={{ width: 40 }}
+                              />
+                            )}
                           </Stack>
                         </TableCell>
                         <TableCell align="center">{element.name}</TableCell>

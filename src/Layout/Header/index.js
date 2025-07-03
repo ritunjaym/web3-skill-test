@@ -1,3 +1,4 @@
+// src/Layout/Header/index.js
 import React from "react";
 import {
   Avatar,
@@ -47,7 +48,41 @@ class Header extends React.Component {
     setToLS("vegan-theme", "light");
   };
 
+  // Disconnect wallet function
+  async disconnectWallet() {
+    try {
+      // Clear state immediately
+      this.setState({
+        account: "",
+        position: "",
+      });
+      this.props.dispatch({ type: "SET_ACCOUNT", payload: "" });
+      this.props.dispatch({ type: "SET_POSITION", payload: "" });
+
+      // Try to disconnect from MetaMask (newer method)
+      if (window.ethereum && window.ethereum.request) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_revokePermissions",
+            params: [{ eth_accounts: {} }]
+          });
+        } catch (revokeError) {
+          // If revoke fails, still consider it disconnected locally
+          console.log("Wallet revoke permissions not supported, disconnected locally");
+        }
+      }
+    } catch (error) {
+      console.error("Disconnect error:", error);
+    }
+  }
+
   async walletConnect() {
+    // Check if MetaMask is installed
+    if (!window.ethereum) {
+      alert("MetaMask is not installed. Please install MetaMask to connect your wallet.");
+      return;
+    }
+
     try {
       await window.ethereum.request({
         method: "wallet_switchEthereumChain",
@@ -77,52 +112,79 @@ class Header extends React.Component {
             method: "wallet_switchEthereumChain",
             params: [{ chainId: web3.utils.toHex(1666600000) }],
           });
-        } catch (addError) {}
+        } catch (addError) {
+          console.error("Failed to add Harmony network:", addError);
+          alert("Failed to add Harmony network to MetaMask.");
+          return;
+        }
+      } else {
+        console.error("Failed to switch network:", switchError);
+        alert("Failed to switch to Harmony network.");
+        return;
       }
     }
 
-    if (window.ethereum) {
-      window.web3 = new Web3(window.ethereum);
-      await window.ethereum.enable();
-      const clientWeb3 = window.web3;
-      const accounts = await clientWeb3.eth.getAccounts();
-      this.setState({
-        account: accounts[0],
+    try {
+      if (window.ethereum) {
+        window.web3 = new Web3(window.ethereum);
+        await window.ethereum.enable();
+        const clientWeb3 = window.web3;
+        const accounts = await clientWeb3.eth.getAccounts();
+        
+        if (accounts.length === 0) {
+          alert("No accounts found. Please connect your wallet.");
+          return;
+        }
+        
+        this.setState({
+          account: accounts[0],
+        });
+        this.props.dispatch({ type: "SET_ACCOUNT", payload: accounts[0] });
+        await this.getPosition(accounts[0]);
+      } else if (window.web3) {
+        window.web3 = new Web3(window.web3.currentProvider);
+        const clientWeb3 = window.web3;
+        const accounts = await clientWeb3.eth.getAccounts();
+        this.setState({
+          account: accounts[0],
+        });
+        this.props.dispatch({ type: "SET_ACCOUNT", payload: accounts[0] });
+        await this.getPosition(accounts[0]);
+      }
+
+      const { ethereum } = window;
+      ethereum.on("accountsChanged", async (accounts) => {
+        try {
+          if (accounts.length === 0) {
+            // User disconnected wallet
+            this.setState({
+              account: "",
+              position: "",
+            });
+            this.props.dispatch({ type: "SET_ACCOUNT", payload: "" });
+            this.props.dispatch({ type: "SET_POSITION", payload: "" });
+            return;
+          }
+          
+          const newAccount = web3.utils.toChecksumAddress(accounts[0]);
+          this.setState({ account: newAccount });
+          this.props.dispatch({ type: "SET_ACCOUNT", payload: newAccount });
+          await this.getPosition(newAccount);
+        } catch (err) {
+          console.error("Error processing account change:", err);
+        }
       });
-      this.props.dispatch({ type: "SET_ACCOUNT", payload: accounts[0] });
-      await this.getPosition(accounts[0]);
-    } else if (window.web3) {
-      window.web3 = new Web3(window.web3.currentProvider);
-      const clientWeb3 = window.web3;
-      const accounts = await clientWeb3.eth.getAccounts();
-      this.setState({
-        account: accounts[0],
+
+      ethereum.on("chainChanged", async (chainId) => {
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: web3.utils.toHex(1666600000) }],
+        });
       });
-      this.props.dispatch({ type: "SET_ACCOUNT", payload: accounts[0] });
-      await this.getPosition(accounts[0]);
+    } catch (error) {
+      console.error("Wallet connection error:", error);
+      alert("Failed to connect wallet. Please try again.");
     }
-
-    const { ethereum } = window;
-    ethereum.on("accountsChanged", async (accounts) => {
-      try {
-        accounts = web3.utils.toChecksumAddress(accounts + "");
-      } catch (err) {}
-
-      this.setState({
-        account: accounts,
-      });
-      this.checkDashBoard(this.state.account);
-      this.checkElectionStatus();
-    });
-
-    ethereum.on("chainChanged", async (chainId) => {
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: web3.utils.toHex(1666600000) }],
-      });
-    });
-
-    // this.checkDashBoard(this.state.linkedAccount)
   }
 
   async getPosition(address) {
@@ -213,23 +275,38 @@ class Header extends React.Component {
                 display: { xs: "none", md: "block" },
               }}
             >
-              Vegan Rob’s DAO
+              Vegan Rob's DAO
             </Typography>
           </Stack>
           <Stack flexDirection="row" gap={5} alignItems="center">
-            <Button
-              variant="contained"
-              color="success"
-              disabled={this.state.account ? true : false}
-              sx={{
-                fontWeight: 700,
-                display: { xs: "none", sm: "block" },
-                color: this.props.theme.palette.common.white,
-              }}
-              onClick={() => this.walletConnect()}
-            >
-              Connect Wallet
-            </Button>
+            {/* Connect/Disconnect Button */}
+            {!this.state.account ? (
+              <Button
+                variant="contained"
+                color="success"
+                sx={{
+                  fontWeight: 700,
+                  display: { xs: "none", sm: "block" },
+                  color: this.props.theme.palette.common.white,
+                }}
+                onClick={() => this.walletConnect()}
+              >
+                Connect Wallet
+              </Button>
+            ) : (
+              <Button
+                variant="outlined"
+                color="error"
+                sx={{
+                  fontWeight: 700,
+                  display: { xs: "none", sm: "block" },
+                }}
+                onClick={() => this.disconnectWallet()}
+              >
+                Disconnect
+              </Button>
+            )}
+            
             <Stack flexDirection="row" alignItems="center" gap={4}>
               <Stack
                 flexDirection="row"

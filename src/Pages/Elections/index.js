@@ -1,3 +1,4 @@
+// src/Pages/Elections/index.js
 import React from "react";
 import {
   Box,
@@ -22,17 +23,6 @@ import { unixStamp } from "../../Utils/date";
 
 const web3 = new Web3(new Web3.providers.HttpProvider(RPC));
 const daoContract = new web3.eth.Contract(daoABI, daoAddress);
-
-// const ITEM_HEIGHT = 48;
-// const ITEM_PADDING_TOP = 8;
-// const MenuProps = {
-//   PaperProps: {
-//     style: {
-//       maxHeight: ITEM_HEIGHT * 4.5 + ITEM_PADDING_TOP,
-//       width: 250,
-//     },
-//   },
-// };
 
 const cards = [
   {
@@ -82,6 +72,35 @@ class Elections extends React.Component {
     });
   };
 
+  // Fixed helper function with working IPFS gateway
+  processImageUrl = (sourceUrl) => {
+    if (!sourceUrl) return null;
+    
+    // If it's the broken domain, fix it
+    if (sourceUrl.startsWith('https://vrdao.mypinata.cloud/ipfs/')) {
+      const hash = sourceUrl.split('/ipfs/')[1];
+      return `https://gateway.pinata.cloud/ipfs/${hash}`;
+    }
+    
+    // If it's already a complete URL with working domain, return as is
+    if (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://')) {
+      return sourceUrl;
+    }
+    
+    // If it's an IPFS hash, convert to proper URL
+    if (sourceUrl.startsWith('Qm') || sourceUrl.startsWith('bafy')) {
+      return `https://gateway.pinata.cloud/ipfs/${sourceUrl}`;
+    }
+    
+    // If it contains ipfs in the path, fix it
+    if (sourceUrl.includes('/ipfs/')) {
+      const hash = sourceUrl.split('/ipfs/')[1];
+      return `https://gateway.pinata.cloud/ipfs/${hash}`;
+    }
+    
+    return sourceUrl;
+  };
+
   async componentWillReceiveProps(nextProps) {
     await this.init(nextProps);
   }
@@ -92,8 +111,13 @@ class Elections extends React.Component {
       let ended = 0;
       let elections = [];
       let electionCount = await daoContract.methods.proposalIndex().call();
+      
       for (let i = 0; i < electionCount; i++) {
         const election = await daoContract.methods.proposals(i).call();
+        
+        // Process the image URL
+        election.processedImageUrl = this.processImageUrl(election.source);
+        
         if (election.isVoteEnded) {
           ended++;
         } else {
@@ -101,6 +125,7 @@ class Elections extends React.Component {
         }
         elections.push(election);
       }
+      
       this.setState({
         elections: elections,
         realElections: elections,
@@ -110,7 +135,7 @@ class Elections extends React.Component {
     }
   }
 
-  async componentWillMount() {
+  async componentDidMount() {
     await this.init(this.props);
   }
 
@@ -124,6 +149,7 @@ class Elections extends React.Component {
       realElections: realElections,
     });
   }
+
   render() {
     return (
       <Box sx={{ pb: 7 }}>
@@ -250,40 +276,6 @@ class Elections extends React.Component {
                 value={this.state.keyword}
                 onChange={this.handleSearch}
               />
-              {/* <FormControl>
-                                <Select
-                                    // variant="filled"
-                                    // multiple
-                                    displayEmpty
-                                    value={this.state.personName}
-                                    onChange={this.handleChange}
-                                    input={<OutlinedInput />}
-                                    renderValue={(selected) => {
-                                        if (selected.length === 0) {
-                                        return "Latest"
-                                        }
-
-                                        return selected
-                                    }}
-                                    size="small"
-                                    MenuProps={MenuProps}
-                                    inputProps={{ 'aria-label': 'Without label' }}
-                                    sx={{
-                                        '& .MuiOutlinedInput-notchedOutline': {
-                                            border: 'none'
-                                        }
-                                    }}
-                                >
-                                {names.map((name, key) => (
-                                    <MenuItem
-                                        key={key}
-                                        value={name}
-                                    >
-                                    {name}
-                                    </MenuItem>
-                                ))}
-                                </Select>
-                            </FormControl> */}
             </Stack>
           </Stack>
           <Stack gap={2}>
@@ -336,13 +328,23 @@ class Elections extends React.Component {
                         : "#CBCBCB",
                     width: 100,
                     height: 100,
+                    overflow: 'hidden',
                   }}
                 >
-                  {element.source ? (
+                  {element.processedImageUrl ? (
                     <Box
-                      src={element.source}
                       component="img"
-                      sx={{ width: "100%" }}
+                      src={element.processedImageUrl}
+                      onError={(e) => {
+                        // Fallback to default image if the processed URL fails
+                        e.target.src = "/images/election.png";
+                      }}
+                      sx={{ 
+                        width: "100%", 
+                        height: "100%",
+                        objectFit: "cover" 
+                      }}
+                      alt={element.name || "Election image"}
                     />
                   ) : (
                     <ElectionIcon
